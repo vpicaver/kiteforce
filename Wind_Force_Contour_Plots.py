@@ -1,6 +1,8 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
+import pandas as pd
+from scipy.interpolate import interp1d
 
 # Constants
 R = 287.05  # Specific gas constant for dry air in J/(kg·K)
@@ -18,7 +20,7 @@ temperatures = np.arange(-40, 41, 1.0)  # Temperature in Celsius
 #temperatures = np.arange(15, 16, 10)  # Temperature in Celsius
 H = np.arange(0, 4100, 10)  # Altitude in meters
 #H = np.arange(0, 100, 0.1)  # Altitude in meters
-V = np.arange(0, 30.1 * 1.0/ms_to_knots, 1)  # Wind velocity in m/s
+V = np.arange(0, 60.1 * 1.0/ms_to_knots, 1)  # Wind velocity in m/s
 
 # Initialize 3D arrays to hold the force data
 F_given_eq = np.zeros((len(temperatures), len(H), len(V)))
@@ -89,6 +91,17 @@ print(f"Percent difference in air density at 0m and 15°C: {percent_diff_at_0m_1
 #percent_diff_at_0m_13C = percent_diff[index_H, index_T_13]
 #print(f"Percent difference in air density at 0m and 13.5°C: {percent_diff_at_0m_13C}%")
 
+def display_lookup_table(data, row_labels, col_labels, row_title, col_title):
+    df = pd.DataFrame(data, index=row_labels, columns=col_labels)
+    df.index.name = row_title
+    df.columns.name = col_title
+    return df
+
+## Display the first lookup table
+#first_lookup_table = display_lookup_table(percent_diff, H, temperatures, 'Altitude (m)', 'Temperature (°C)')
+#first_lookup_table.head()  # Show only the first few rows for demonstration purposes
+
+
 def plot_contour(data, temperatures, H, title, cbar_label, levels, fmt, filename, cmap='coolwarm'):
     fig, ax = plt.subplots(figsize=(8, 6))
 
@@ -133,6 +146,51 @@ plot_contour(
 
 # Calculate the multiplier
 multiplier = rho_standard / rho_given_eq
+
+## Making air density cards ##
+# Find the indices that match the subset ranges
+subset_temperatures = np.arange(-20, 7, 2)  # From -20°C to 6°C with 2°C increments
+subset_H = np.arange(500, 3100, 100)  # From 500m to 3000m with 100m increments
+
+subset_temp_indices = [np.where(np.isclose(temperatures, t, atol=1e-8))[0][0] for t in subset_temperatures]
+subset_H_indices = [np.where(np.isclose(H, h, atol=1e-8))[0][0] for h in subset_H]
+
+# Generate the air density multiplier
+air_density_multiplier = rho_given_eq / rho_standard
+
+# Extract the subset of data based on the indices
+subset_air_density_multiplier = air_density_multiplier[np.ix_(subset_H_indices, subset_temp_indices)]
+
+# Create and display the new subset air_density_multiplier table
+subset_air_density_multiplier_table = display_lookup_table(subset_air_density_multiplier, subset_H, subset_temperatures, 'Altitude (m)', 'Temperature (°C)')
+subset_air_density_multiplier_table.to_csv("subset_air_density_multiplier_table.csv")
+
+## Create multiplier table
+force_at_0m_15C = F_given_eq[index_H, index_T, :]
+
+# Convert existing wind speeds from m/s to km/h for interpolation
+V_km_h = V * 3.6
+
+# Create the new wind speed range in km/h
+new_V_km_h = np.arange(5, 66, 5)
+
+# Interpolate the existing force data to the new wind speed range
+interp_force = interp1d(V_km_h, force_at_0m_15C, kind='linear')
+new_force_at_0m_15C = interp_force(new_V_km_h)
+
+# Create the force multiplier range
+force_multipliers = np.arange(0.70, 1.105, 0.02)
+
+# Initialize the table to hold the force data
+force_multiplier_table = np.zeros((len(force_multipliers), len(new_V_km_h)))
+
+# Populate the table
+for i, multiplier_ in enumerate(force_multipliers):
+    force_multiplier_table[i, :] = new_force_at_0m_15C * multiplier_
+
+# Create and display the force multiplier table
+force_multiplier_table_df = display_lookup_table(force_multiplier_table, force_multipliers, new_V_km_h, 'Force Multiplier', 'Wind Speed (km/h)')
+force_multiplier_table_df.to_csv("force_multiplier_table_df.csv")
 
 # Use the function for multiplier
 plot_contour(
